@@ -432,6 +432,135 @@ object PdfEngine {
             outputFile
         }
 
+    /**
+     * Converts a .docx (WordprocessingML) or .txt file into a paginated A4 PDF completely offline.
+     */
+    suspend fun convertWordOrTextToPdf(
+        context: Context,
+        uri: Uri,
+        outputFile: File
+    ): File = withContext(Dispatchers.IO) {
+        outputFile.parentFile?.mkdirs()
+        val rawBytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            ?: error("Unable to read selected file")
+        val isZipDocx = rawBytes.size >= 4 &&
+            rawBytes[0] == 0x50.toByte() && rawBytes[1] == 0x4B.toByte()
+
+        val paragraphs = if (isZipDocx) {
+            extractDocxParagraphs(rawBytes)
+        } else {
+            rawBytes.toString(Charsets.UTF_8).lines()
+        }.ifEmpty { listOf("(Empty document)") }
+
+        renderParagraphsToA4Pdf(paragraphs, outputFile)
+        outputFile
+    }
+
+    private fun extractDocxParagraphs(docxBytes: ByteArray): List<String> {
+        val result = mutableListOf<String>()
+        java.util.zip.ZipInputStream(docxBytes.inputStream()).use { zip ->
+            var entry = zip.nextEntry
+            while (entry != null) {
+                if (entry.name == "word/document.xml") {
+                    val xmlBytes = zip.readBytes()
+                    val parser = android.util.Xml.newPullParser()
+                    parser.setInput(xmlBytes.inputStream(), "UTF-8")
+                    var event = parser.eventType
+                    val currentPara = StringBuilder()
+                    var inParagraph = false
+                    while (event != org.xmlpull.v1.XmlPullParser.END_DOCUMENT) {
+                        when (event) {
+                            org.xmlpull.v1.XmlPullParser.START_TAG -> {
+                                when {
+                                    parser.name == "w:p" || parser.name == "p" -> {
+                                        inParagraph = true
+                                        currentPara.clear()
+                                    }
+                                    parser.name == "w:br" || parser.name == "br" -> {
+                                        currentPara.append('\n')
+                                    }
+                                    parser.name == "w:tab" || parser.name == "tab" -> {
+                                        currentPara.append("    ")
+                                    }
+                                }
+                            }
+                            org.xmlpull.v1.XmlPullParser.TEXT -> {
+                                if (inParagraph) {
+                                    currentPara.append(parser.text)
+                                }
+                            }
+                            org.xmlpull.v1.XmlPullParser.END_TAG -> {
+                                if (parser.name == "w:p" || parser.name == "p") {
+                                    result.add(currentPara.toString())
+                                    inParagraph = false
+                                }
+                            }
+                        }
+                        event = parser.next()
+                    }
+                    break
+                }
+                entry = zip.nextEntry
+            }
+        }
+        return result
+    }
+
+    private fun renderParagraphsToA4Pdf(paragraphs: List<String>, outputFile: File) {
+        val pageW = 1190
+        val pageH = 1684
+        val marginX = 96f
+        val marginTop = 104f
+        val marginBottom = 104f
+        val contentW = (pageW - marginX * 2f).roundToInt()
+
+        val textPaint = android.text.TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#0F172A")
+            textSize = 24f
+        }
+
+        val pageBitmaps = mutableListOf<Bitmap>()
+        var currentBmp = Bitmap.createBitmap(pageW, pageH, Bitmap.Config.ARGB_8888)
+        var currentCanvas = android.graphics.Canvas(currentBmp).apply { drawColor(Color.WHITE) }
+        var cursorY = marginTop
+
+        for (rawPara in paragraphs) {
+            val para = rawPara.ifEmpty { " " }
+            val layout = android.text.StaticLayout.Builder
+                .obtain(para, 0, para.length, textPaint, contentW)
+                .setLineSpacing(4f, 1.25f)
+                .build()
+
+            if (cursorY + layout.height > pageH - marginBottom && cursorY > marginTop) {
+                pageBitmaps.add(currentBmp)
+                currentBmp = Bitmap.createBitmap(pageW, pageH, Bitmap.Config.ARGB_8888)
+                currentCanvas = android.graphics.Canvas(currentBmp).apply { drawColor(Color.WHITE) }
+                cursorY = marginTop
+            }
+
+            currentCanvas.save()
+            currentCanvas.translate(marginX, cursorY)
+            layout.draw(currentCanvas)
+            currentCanvas.restore()
+            cursorY += layout.height + 16f
+        }
+        pageBitmaps.add(currentBmp)
+
+        PDDocument().use { doc ->
+            val a4 = com.tom_roush.pdfbox.pdmodel.common.PDRectangle.A4
+            for (bmp in pageBitmaps) {
+                val page = com.tom_roush.pdfbox.pdmodel.PDPage(a4)
+                doc.addPage(page)
+                val pdImg = com.tom_roush.pdfbox.pdmodel.graphics.image.JPEGFactory.createFromImage(doc, bmp, 0.90f)
+                com.tom_roush.pdfbox.pdmodel.PDPageContentStream(doc, page).use { cs ->
+                    cs.drawImage(pdImg, 0f, 0f, a4.width, a4.height)
+                }
+                bmp.recycle()
+            }
+            doc.save(outputFile)
+        }
+    }
+
     suspend fun saveImageToMediaStore(context: Context, imageFile: File, displayName: String): Uri? =
         withContext(Dispatchers.IO) {
             val values = ContentValues().apply {

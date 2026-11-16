@@ -490,19 +490,30 @@ object ImageProcessor {
         return result
     }
 
-    fun applyWatermark(source: Bitmap, text: String, alpha: Int = 55): Bitmap {
+    fun applyWatermark(
+        source: Bitmap,
+        text: String,
+        alpha: Int = 55,
+        scaleFactor: Float = 1f,
+        colorInt: Int = Color.rgb(15, 118, 110)
+    ): Bitmap {
         if (text.isBlank()) return source
         val out = source.copy(Bitmap.Config.ARGB_8888, true)
         val canvas = Canvas(out)
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.argb(alpha.coerceIn(15, 160), 15, 118, 110)
-            textSize = (min(out.width, out.height) / 11f).coerceAtLeast(32f)
+            color = Color.argb(
+                alpha.coerceIn(15, 180),
+                Color.red(colorInt),
+                Color.green(colorInt),
+                Color.blue(colorInt)
+            )
+            textSize = ((min(out.width, out.height) / 11f) * scaleFactor.coerceIn(0.6f, 1.8f)).coerceAtLeast(24f)
             textAlign = Paint.Align.CENTER
             isFakeBoldText = true
         }
         canvas.save()
         canvas.rotate(-32f, out.width / 2f, out.height / 2f)
-        val stepY = paint.textSize * 3.2f
+        val stepY = paint.textSize * 3.1f
         var y = -out.height * 0.25f
         while (y < out.height * 1.25f) {
             canvas.drawText(text.uppercase(), out.width / 2f, y, paint)

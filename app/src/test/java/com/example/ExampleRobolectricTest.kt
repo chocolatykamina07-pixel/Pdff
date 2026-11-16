@@ -73,4 +73,29 @@ class ExampleRobolectricTest {
         )
         assertEquals(0L, est)
     }
+
+    @Test
+    fun `word to pdf and custom watermark produce valid outputs`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val docxFile = File(context.cacheDir, "sample_word_in.docx")
+        PdfEngine.exportDocx("Annual Report", "Executive summary paragraph.\nSecond line of text.", docxFile)
+
+        val pdfOut = File(context.cacheDir, "converted_word.pdf")
+        PdfEngine.convertWordOrTextToPdf(context, android.net.Uri.fromFile(docxFile), pdfOut)
+        assertTrue(pdfOut.exists() && pdfOut.length() > 500L)
+
+        val src = Bitmap.createBitmap(300, 400, Bitmap.Config.ARGB_8888)
+        src.eraseColor(Color.WHITE)
+        val marked = ImageProcessor.applyWatermark(
+            source = src,
+            text = "CONFIDENTIAL",
+            alpha = 80,
+            scaleFactor = 1.2f,
+            colorInt = Color.RED
+        )
+        assertEquals(300, marked.width)
+        assertEquals(400, marked.height)
+        src.recycle()
+        marked.recycle()
+    }
 }

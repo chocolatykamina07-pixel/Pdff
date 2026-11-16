@@ -418,7 +418,7 @@ fun ScannerScreen(
             scanMode = state.scanMode
         )
 
-        // ID Card Mode Banner
+        // ID Card & Passport Mode Banner
         if (state.scanMode == ScanMode.ID_CARD) {
             Surface(
                 color = Color.Black.copy(alpha = 0.7f),
@@ -429,11 +429,27 @@ fun ScannerScreen(
                     .padding(top = 64.dp)
             ) {
                 Text(
-                    text = if (state.idFrontFile == null) {
-                        stringResource(R.string.id_front_prompt)
-                    } else {
-                        stringResource(R.string.id_back_prompt)
+                    text = when {
+                        !state.idCardBothSides -> "Align ID card inside frame"
+                        state.idFrontFile == null -> stringResource(R.string.id_front_prompt)
+                        else -> stringResource(R.string.id_back_prompt)
                     },
+                    color = AmberAccent,
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+            }
+        } else if (state.scanMode == ScanMode.PASSPORT) {
+            Surface(
+                color = Color.Black.copy(alpha = 0.7f),
+                shape = PillShape,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .statusBarsPadding()
+                    .padding(top = 64.dp)
+            ) {
+                Text(
+                    text = "Align open passport photo page",
                     color = AmberAccent,
                     style = MaterialTheme.typography.labelLarge,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
@@ -555,8 +571,46 @@ fun ScannerScreen(
                 }
             }
 
-            // Single / Batch Toggle
-            if (state.scanMode != ScanMode.QR_BARCODE && state.scanMode != ScanMode.ID_CARD) {
+            // Single/Both Sides for ID Card, or Single/Batch for Document/Passport/Book/Whiteboard
+            if (state.scanMode == ScanMode.ID_CARD || state.scanMode == ScanMode.PASSPORT) {
+                Surface(
+                    shape = PillShape,
+                    color = Color.White.copy(alpha = 0.15f)
+                ) {
+                    Row(modifier = Modifier.padding(3.dp)) {
+                        val isSingleId = state.scanMode == ScanMode.ID_CARD && !state.idCardBothSides
+                        val isBothId = state.scanMode == ScanMode.ID_CARD && state.idCardBothSides
+                        val isPassport = state.scanMode == ScanMode.PASSPORT
+
+                        listOf(
+                            Triple(isSingleId, "Single side") {
+                                viewModel.selectMode(ScanMode.ID_CARD)
+                                viewModel.setIdCardBothSides(false)
+                            },
+                            Triple(isBothId, "Both sides") {
+                                viewModel.selectMode(ScanMode.ID_CARD)
+                                viewModel.setIdCardBothSides(true)
+                            },
+                            Triple(isPassport, "Passport") {
+                                viewModel.selectMode(ScanMode.PASSPORT)
+                            }
+                        ).forEach { (active, label, onClick) ->
+                            Surface(
+                                shape = PillShape,
+                                color = if (active) DeepTeal else Color.Transparent,
+                                modifier = Modifier.clickable(onClick = onClick)
+                            ) {
+                                Text(
+                                    text = label,
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            } else if (state.scanMode != ScanMode.QR_BARCODE) {
                 Surface(
                     shape = PillShape,
                     color = Color.White.copy(alpha = 0.15f)

@@ -221,6 +221,7 @@ fun CropAdjustScreen(
                     val imgBmp = remember(bmp) { bmp.asImageBitmap() }
                     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
 
+                    var lastDragNorm by remember { mutableStateOf(Offset.Zero) }
                     Canvas(
                         modifier = Modifier
                             .fillMaxSize()
@@ -232,23 +233,51 @@ fun CropAdjustScreen(
                                         val corners = quad.asList().map { pt ->
                                             Offset(rect.left + pt.x * rect.width, rect.top + pt.y * rect.height)
                                         }
-                                        val nearest = corners.withIndex().minByOrNull { hypot(it.value.x - offset.x, it.value.y - offset.y) }
+                                        val midpoints = listOf(
+                                            Offset((corners[0].x + corners[1].x) / 2f, (corners[0].y + corners[1].y) / 2f),
+                                            Offset((corners[1].x + corners[2].x) / 2f, (corners[1].y + corners[2].y) / 2f),
+                                            Offset((corners[2].x + corners[3].x) / 2f, (corners[2].y + corners[3].y) / 2f),
+                                            Offset((corners[3].x + corners[0].x) / 2f, (corners[3].y + corners[0].y) / 2f)
+                                        )
+                                        val allHandles = corners + midpoints
+                                        val nearest = allHandles.withIndex().minByOrNull { hypot(it.value.x - offset.x, it.value.y - offset.y) }
                                         activeHandle = if (nearest != null && hypot(nearest.value.x - offset.x, nearest.value.y - offset.y) < 90f) {
                                             nearest.index
                                         } else -1
+                                        lastDragNorm = Offset(
+                                            ((offset.x - rect.left) / rect.width).coerceIn(0f, 1f),
+                                            ((offset.y - rect.top) / rect.height).coerceIn(0f, 1f)
+                                        )
                                     },
-                                    onDrag = { change, _ ->
-                                        if (activeHandle in 0..3) {
+                                    onDrag = { change, dragAmount ->
+                                        if (activeHandle in 0..7) {
                                             change.consume()
                                             val rect = computeFitRect(bmp.width, bmp.height, canvasSize.width.toFloat(), canvasSize.height.toFloat())
                                             val nx = ((change.position.x - rect.left) / rect.width).coerceIn(0f, 1f)
                                             val ny = ((change.position.y - rect.top) / rect.height).coerceIn(0f, 1f)
-                                            val pt = NormalizedPoint(nx, ny)
+                                            val dx = dragAmount.x / rect.width
+                                            val dy = dragAmount.y / rect.height
                                             quad = when (activeHandle) {
-                                                0 -> quad.copy(topLeft = pt)
-                                                1 -> quad.copy(topRight = pt)
-                                                2 -> quad.copy(bottomRight = pt)
-                                                else -> quad.copy(bottomLeft = pt)
+                                                0 -> quad.copy(topLeft = NormalizedPoint(nx, ny))
+                                                1 -> quad.copy(topRight = NormalizedPoint(nx, ny))
+                                                2 -> quad.copy(bottomRight = NormalizedPoint(nx, ny))
+                                                3 -> quad.copy(bottomLeft = NormalizedPoint(nx, ny))
+                                                4 -> quad.copy(
+                                                    topLeft = quad.topLeft.copy(y = (quad.topLeft.y + dy).coerceIn(0f, 1f)),
+                                                    topRight = quad.topRight.copy(y = (quad.topRight.y + dy).coerceIn(0f, 1f))
+                                                )
+                                                5 -> quad.copy(
+                                                    topRight = quad.topRight.copy(x = (quad.topRight.x + dx).coerceIn(0f, 1f)),
+                                                    bottomRight = quad.bottomRight.copy(x = (quad.bottomRight.x + dx).coerceIn(0f, 1f))
+                                                )
+                                                6 -> quad.copy(
+                                                    bottomRight = quad.bottomRight.copy(y = (quad.bottomRight.y + dy).coerceIn(0f, 1f)),
+                                                    bottomLeft = quad.bottomLeft.copy(y = (quad.bottomLeft.y + dy).coerceIn(0f, 1f))
+                                                )
+                                                else -> quad.copy(
+                                                    bottomLeft = quad.bottomLeft.copy(x = (quad.bottomLeft.x + dx).coerceIn(0f, 1f)),
+                                                    topLeft = quad.topLeft.copy(x = (quad.topLeft.x + dx).coerceIn(0f, 1f))
+                                                )
                                             }
                                         }
                                     },
@@ -275,15 +304,28 @@ fun CropAdjustScreen(
                         drawPath(poly, color = DeepTeal.copy(alpha = 0.22f))
                         drawPath(poly, color = AmberAccent, style = Stroke(width = 4f))
 
-                        listOf(tl, tr, br, bl).forEachIndexed { idx, pt ->
+                        val corners = listOf(tl, tr, br, bl)
+                        val midpoints = listOf(
+                            Offset((tl.x + tr.x) / 2f, (tl.y + tr.y) / 2f),
+                            Offset((tr.x + br.x) / 2f, (tr.y + br.y) / 2f),
+                            Offset((br.x + bl.x) / 2f, (br.y + bl.y) / 2f),
+                            Offset((bl.x + tl.x) / 2f, (bl.y + tl.y) / 2f)
+                        )
+
+                        corners.forEachIndexed { idx, pt ->
                             val isActive = idx == activeHandle
                             drawCircle(color = AmberAccent, radius = if (isActive) 22f else 16f, center = pt)
                             drawCircle(color = Color.White, radius = if (isActive) 13f else 9f, center = pt)
                         }
+                        midpoints.forEachIndexed { idx, pt ->
+                            val isActive = (idx + 4) == activeHandle
+                            drawCircle(color = DeepTeal, radius = if (isActive) 18f else 12f, center = pt)
+                            drawCircle(color = Color.White, radius = if (isActive) 10f else 6f, center = pt)
+                        }
 
-                        // Magnifier Loupe above active handle
+                        // Magnifier Loupe above active corner handle
                         if (activeHandle in 0..3) {
-                            val pt = listOf(tl, tr, br, bl)[activeHandle]
+                            val pt = corners[activeHandle]
                             val normPt = quad.asList()[activeHandle]
                             val loupeRadius = 72f
                             val loupeCenter = Offset(

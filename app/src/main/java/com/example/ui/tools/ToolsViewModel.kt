@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.data.local.DocumentEntity
 import com.example.data.repository.ScanNestRepository
 import com.example.domain.model.ExportQuality
 import com.example.domain.model.FilterType
@@ -14,8 +15,10 @@ import com.example.pdf.PdfEngine
 import com.example.processing.ImageProcessor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -50,6 +53,50 @@ class ToolsViewModel(
 
     private val _state = MutableStateFlow(ToolWorkspaceState())
     val state: StateFlow<ToolWorkspaceState> = _state.asStateFlow()
+
+    val documents: StateFlow<List<DocumentEntity>> = repository.activeDocuments.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyList()
+    )
+
+    suspend fun getFirstPageId(documentId: Long): Long? =
+        repository.getPages(documentId).firstOrNull()?.id
+
+    fun importFilesDirectly(uris: List<Uri>, onOpenDocument: (Long) -> Unit) {
+        if (uris.isEmpty()) return
+        viewModelScope.launch {
+            _state.update { it.copy(isProcessing = true, errorMessage = null) }
+            runCatching {
+                val first = uris.first()
+                val mime = context.contentResolver.getType(first).orEmpty()
+                val docId = if (mime.contains("pdf")) {
+                    val rendered = PdfEngine.renderPdfPagesToBitmaps(context, first, 1500)
+                    if (rendered.isEmpty()) error("Unable to read PDF pages")
+                    val id = repository.createDocumentFromImageFiles(
+                        name = repository.defaultDocumentName("Imported PDF"),
+                        sourceFiles = rendered,
+                        filterType = FilterType.ORIGINAL,
+                        autoDetectCrop = false
+                    )
+                    rendered.forEach { it.delete() }
+                    id
+                } else {
+                    repository.importUrisAsDocument(
+                        name = repository.defaultDocumentName("Imported"),
+                        uris = uris,
+                        filterType = FilterType.AUTO_ENHANCE
+                    ) ?: error("Could not import selected files")
+                }
+                _state.update { it.copy(isProcessing = false) }
+                onOpenDocument(docId)
+            }.onFailure { err ->
+                _state.update {
+                    it.copy(isProcessing = false, errorMessage = err.localizedMessage ?: "Import failed")
+                }
+            }
+        }
+    }
 
     fun openTool(tool: ToolType) {
         _state.value = ToolWorkspaceState(activeTool = tool)
@@ -172,6 +219,36 @@ class ToolsViewModel(
                                 statusMessage = "Created ${pages.size}-page PDF"
                             )
                         }
+                    }
+
+                    ToolType.WORD_TO_PDF -> {
+                        val outFile = File(exportDir, "ScanNest_Word_$ts.pdf")
+                        PdfEngine.convertWordOrTextToPdf(context, current.selectedUris.first(), outFile)
+                        _state.update {
+                            it.copy(
+                                isProcessing = false,
+                                resultFile = outFile,
+                                resultSizeBytes = outFile.length(),
+                                statusMessage = "Converted document to A4 PDF"
+                            )
+                        }
+                    }
+
+                    ToolType.PDF_READER -> {
+                        val uri = current.selectedUris.first()
+                        val rendered = PdfEngine.renderPdfPagesToBitmaps(context, uri, 1500)
+                        if (rendered.isEmpty()) error("Unable to open PDF pages")
+                        val docId = repository.createDocumentFromImageFiles(
+                            name = repository.defaultDocumentName("PDF Reader"),
+                            sourceFiles = rendered,
+                            filterType = FilterType.ORIGINAL,
+                            autoDetectCrop = false
+                        )
+                        rendered.forEach { it.delete() }
+                        _state.update {
+                            it.copy(isProcessing = false, createdDocId = docId, statusMessage = "Opened PDF")
+                        }
+                        onOpenDocument(docId)
                     }
 
                     ToolType.MERGE_PDF -> {

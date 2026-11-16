@@ -260,3 +260,91 @@ fun AboutLicensesDialog(onDismiss: () -> Unit) {
         }
     )
 }
+
+@Composable
+fun WatermarkConfigDialog(
+    initialText: String = "CONFIDENTIAL",
+    onConfirm: (text: String, alpha: Int, scaleFactor: Float, colorInt: Int) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var text by remember { mutableStateOf(initialText) }
+    var opacityFraction by remember { mutableStateOf(0.28f) }
+    var scaleFactor by remember { mutableStateOf(1.0f) }
+    var selectedColor by remember { mutableStateOf(android.graphics.Color.rgb(15, 118, 110)) }
+
+    val colorChoices = listOf(
+        "Teal" to android.graphics.Color.rgb(15, 118, 110),
+        "Slate" to android.graphics.Color.rgb(30, 41, 59),
+        "Red" to android.graphics.Color.rgb(220, 38, 38),
+        "Amber" to android.graphics.Color.rgb(217, 119, 6)
+    )
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Custom Security Watermark") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    label = { Text("Watermark text") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Text("Size", style = MaterialTheme.typography.labelMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("Small" to 0.75f, "Medium" to 1.0f, "Large" to 1.35f).forEach { (lbl, scale) ->
+                        androidx.compose.material3.FilterChip(
+                            selected = kotlin.math.abs(scaleFactor - scale) < 0.05f,
+                            onClick = { scaleFactor = scale },
+                            label = { Text(lbl) }
+                        )
+                    }
+                }
+
+                Column {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Opacity", style = MaterialTheme.typography.labelMedium)
+                        Text("${(opacityFraction * 100).toInt()}%", style = MaterialTheme.typography.labelSmall)
+                    }
+                    androidx.compose.material3.Slider(
+                        value = opacityFraction,
+                        onValueChange = { opacityFraction = it },
+                        valueRange = 0.12f..0.70f
+                    )
+                }
+
+                Text("Color", style = MaterialTheme.typography.labelMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    colorChoices.forEach { (lbl, cInt) ->
+                        androidx.compose.material3.FilterChip(
+                            selected = selectedColor == cInt,
+                            onClick = { selectedColor = cInt },
+                            label = { Text(lbl) }
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    if (text.isNotBlank()) {
+                        onConfirm(
+                            text.trim(),
+                            (opacityFraction * 255).toInt().coerceIn(20, 180),
+                            scaleFactor,
+                            selectedColor
+                        )
+                    }
+                    onDismiss()
+                }
+            ) { Text("Apply") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+

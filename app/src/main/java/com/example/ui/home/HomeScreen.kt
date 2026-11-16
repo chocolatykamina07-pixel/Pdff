@@ -62,6 +62,7 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -171,6 +172,12 @@ fun HomeScreen(
                 )
             } else {
                 TopAppBar(
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        titleContentColor = MaterialTheme.colorScheme.onPrimary,
+                        navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
+                        actionIconContentColor = MaterialTheme.colorScheme.onPrimary
+                    ),
                     navigationIcon = {
                         if (state.currentFolderId != null) {
                             IconButton(onClick = { viewModel.openFolder(null) }) {
@@ -285,23 +292,45 @@ fun HomeScreen(
                     singleLine = true,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .padding(horizontal = 16.dp, vertical = 6.dp)
                         .testTag("home_search_input")
                 )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    com.example.domain.model.SearchCategory.entries.forEach { cat ->
+                        androidx.compose.material3.FilterChip(
+                            selected = state.searchCategory == cat,
+                            onClick = { viewModel.setSearchCategory(cat) },
+                            label = { Text(cat.label) }
+                        )
+                    }
+                }
             }
 
-            TabRow(selectedTabIndex = state.selectedTab.ordinal) {
+            TabRow(
+                selectedTabIndex = state.selectedTab.ordinal,
+                containerColor = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.primary
+            ) {
                 HomeTab.entries.forEach { tab ->
                     Tab(
                         selected = state.selectedTab == tab,
                         onClick = { viewModel.selectTab(tab) },
                         text = {
                             val title = when (tab) {
-                                HomeTab.ALL -> stringResource(R.string.tab_all)
+                                HomeTab.ALL -> "All Documents"
                                 HomeTab.RECENT -> stringResource(R.string.tab_recent)
-                                HomeTab.FAVORITES -> stringResource(R.string.tab_favorites)
+                                HomeTab.FAVORITES -> "Favorite"
                             }
-                            Text(title)
+                            Text(
+                                text = title,
+                                fontWeight = if (state.selectedTab == tab) FontWeight.SemiBold else FontWeight.Normal,
+                                maxLines = 1
+                            )
                         },
                         modifier = Modifier.testTag("home_tab_${tab.name.lowercase()}")
                     )

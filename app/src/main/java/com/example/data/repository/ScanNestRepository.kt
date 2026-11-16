@@ -325,11 +325,17 @@ class ScanNestRepository(
         refreshDocumentStats(page.documentId)
     }
 
-    suspend fun applyWatermarkToDocument(documentId: Long, watermarkText: String) = withContext(Dispatchers.IO) {
+    suspend fun applyWatermarkToDocument(
+        documentId: Long,
+        watermarkText: String,
+        alpha: Int = 55,
+        scaleFactor: Float = 1f,
+        colorInt: Int = android.graphics.Color.rgb(15, 118, 110)
+    ) = withContext(Dispatchers.IO) {
         val pages = pageDao.getPagesForDocument(documentId)
         for (page in pages) {
             val bmp = ImageProcessor.decodeSampledBitmap(page.processedImagePath, 2200) ?: continue
-            val marked = ImageProcessor.applyWatermark(bmp, watermarkText)
+            val marked = ImageProcessor.applyWatermark(bmp, watermarkText, alpha, scaleFactor, colorInt)
             bmp.recycle()
             val outFile = File(scansDir(documentId), "wm_${page.id}_${System.currentTimeMillis()}.jpg")
             ImageProcessor.saveBitmapJpeg(marked, outFile, 92)

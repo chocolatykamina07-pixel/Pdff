@@ -7,6 +7,7 @@ import com.example.data.local.FolderEntity
 import com.example.data.preferences.PreferencesManager
 import com.example.data.repository.ScanNestRepository
 import com.example.domain.model.HomeTab
+import com.example.domain.model.SearchCategory
 import com.example.domain.model.SortOption
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -23,6 +24,7 @@ data class HomeUiState(
     val currentFolderName: String? = null,
     val selectedTab: HomeTab = HomeTab.ALL,
     val searchQuery: String = "",
+    val searchCategory: SearchCategory = SearchCategory.ALL,
     val isSearchActive: Boolean = false,
     val sortOption: SortOption = SortOption.DATE,
     val isGridView: Boolean = false,
@@ -35,6 +37,7 @@ data class HomeUiState(
 private data class HomeFilterInputs(
     val tab: HomeTab,
     val query: String,
+    val searchCategory: SearchCategory,
     val searchActive: Boolean,
     val folderId: Long?,
     val selectedIds: Set<Long>,
@@ -48,6 +51,7 @@ class HomeViewModel(
 
     private val selectedTab = MutableStateFlow(HomeTab.ALL)
     private val searchQuery = MutableStateFlow("")
+    private val searchCategory = MutableStateFlow(SearchCategory.ALL)
     private val isSearchActive = MutableStateFlow(false)
     private val currentFolderId = MutableStateFlow<Long?>(null)
     private val selectedDocIds = MutableStateFlow<Set<Long>>(emptySet())
@@ -56,18 +60,21 @@ class HomeViewModel(
     private val filterInputs = combine(
         selectedTab,
         searchQuery,
+        searchCategory,
         isSearchActive,
-        currentFolderId,
-        selectedDocIds
-    ) { tab, query, searchActive, folderId, selectedIds ->
+        currentFolderId
+    ) { tab, query, category, searchActive, folderId ->
         HomeFilterInputs(
             tab = tab,
             query = query,
+            searchCategory = category,
             searchActive = searchActive,
             folderId = folderId,
-            selectedIds = selectedIds,
+            selectedIds = emptySet(),
             previewDocId = null
         )
+    }.combine(selectedDocIds) { inputs, selectedIds ->
+        inputs.copy(selectedIds = selectedIds)
     }.combine(previewDocId) { inputs, previewId ->
         inputs.copy(previewDocId = previewId)
     }
@@ -98,30 +105,46 @@ class HomeViewModel(
             filteredByTab.filter { it.folderId == inputs.folderId }
         }
 
-        val filteredByQuery = if (q.isBlank()) {
-            filteredByFolder
+        val filteredDocs = if (q.isBlank()) {
+            if (inputs.isSearchingFoldersOnly()) emptyList() else filteredByFolder
         } else {
-            filteredByFolder.filter { doc ->
-                doc.name.contains(q, ignoreCase = true) ||
-                    (doc.ocrText?.contains(q, ignoreCase = true) == true) ||
-                    doc.tags.contains(q, ignoreCase = true)
+            when (inputs.searchCategory) {
+                SearchCategory.FOLDERS -> emptyList()
+                SearchCategory.DOCS -> filteredByFolder.filter { it.name.contains(q, ignoreCase = true) }
+                SearchCategory.OCR_TEXT -> filteredByFolder.filter { it.ocrText?.contains(q, ignoreCase = true) == true }
+                SearchCategory.ALL -> filteredByFolder.filter { doc ->
+                    doc.name.contains(q, ignoreCase = true) ||
+                        (doc.ocrText?.contains(q, ignoreCase = true) == true) ||
+                        doc.tags.contains(q, ignoreCase = true)
+                }
             }
         }
 
         val sorted = when (prefs.sortOption) {
-            SortOption.DATE -> filteredByQuery.sortedByDescending { it.updatedAt }
-            SortOption.NAME -> filteredByQuery.sortedBy { it.name.lowercase() }
-            SortOption.SIZE -> filteredByQuery.sortedByDescending { it.sizeBytes }
+            SortOption.DATE -> filteredDocs.sortedByDescending { it.updatedAt }
+            SortOption.NAME -> filteredDocs.sortedBy { it.name.lowercase() }
+            SortOption.SIZE -> filteredDocs.sortedByDescending { it.sizeBytes }
+        }
+
+        val visibleFolders = when {
+            q.isNotBlank() && (inputs.searchCategory == SearchCategory.ALL || inputs.searchCategory == SearchCategory.FOLDERS) -> {
+                folders.filter { it.name.contains(q, ignoreCase = true) }
+            }
+            q.isNotBlank() -> emptyList()
+            inputs.searchActive && inputs.searchCategory == SearchCategory.FOLDERS -> folders
+            inputs.folderId == null && inputs.tab == HomeTab.ALL -> folders
+            else -> emptyList()
         }
 
         HomeUiState(
             documents = sorted,
-            folders = if (inputs.folderId == null && inputs.tab == HomeTab.ALL && q.isBlank()) folders else emptyList(),
+            folders = visibleFolders,
             folderItemCounts = folderCounts,
             currentFolderId = inputs.folderId,
             currentFolderName = activeFolder?.name,
             selectedTab = inputs.tab,
             searchQuery = inputs.query,
+            searchCategory = inputs.searchCategory,
             isSearchActive = inputs.searchActive,
             sortOption = prefs.sortOption,
             isGridView = prefs.isGridView,
@@ -136,17 +159,27 @@ class HomeViewModel(
         initialValue = HomeUiState()
     )
 
+    private fun HomeFilterInputs.isSearchingFoldersOnly(): Boolean =
+        searchActive && searchCategory == SearchCategory.FOLDERS
+
     fun selectTab(tab: HomeTab) {
         selectedTab.value = tab
     }
 
     fun setSearchActive(active: Boolean) {
         isSearchActive.value = active
-        if (!active) searchQuery.value = ""
+        if (!active) {
+            searchQuery.value = ""
+            searchCategory.value = SearchCategory.ALL
+        }
     }
 
     fun updateSearchQuery(query: String) {
         searchQuery.value = query
+    }
+
+    fun setSearchCategory(category: SearchCategory) {
+        searchCategory.value = category
     }
 
     fun openFolder(folderId: Long?) {

@@ -199,7 +199,13 @@ fun ScanNestNavHost(
                 ToolsScreen(
                     viewModel = toolsViewModel,
                     onOpenQrScanner = { openScanner(mode = ScanMode.QR_BARCODE) },
-                    onOpenDocument = { docId -> navController.navigate(DocumentEditorRoute(docId)) }
+                    onOpenScannerMode = { mode -> openScanner(mode = mode) },
+                    onOpenDocument = { docId -> navController.navigate(DocumentEditorRoute(docId)) },
+                    onOpenSignPage = { pageId -> navController.navigate(SignAnnotateRoute(pageId)) },
+                    onExportDocument = { doc ->
+                        editorViewModel.loadDocument(doc.id)
+                        exportSheetDoc = doc
+                    }
                 )
             }
 
@@ -376,18 +382,18 @@ fun ScanNestNavHost(
                     contentColor = Color(0xFF0F172A),
                     elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 6.dp),
                     modifier = Modifier
-                        .size(62.dp)
-                        .border(3.dp, MaterialTheme.colorScheme.surface, CircleShape)
+                        .size(60.dp)
+                        .border(2.5.dp, MaterialTheme.colorScheme.surface, CircleShape)
                         .testTag("scan_fab")
                 ) {
                     Icon(
                         Icons.Outlined.CameraAlt,
                         contentDescription = stringResource(R.string.cd_scan_fab),
-                        modifier = Modifier.size(28.dp)
+                        modifier = Modifier.size(26.dp)
                     )
                 }
             },
-            floatingActionButtonPosition = FabPosition.Center,
+            floatingActionButtonPosition = FabPosition.End,
             bottomBar = {
                 NavigationBar {
                     NavigationBarItem(

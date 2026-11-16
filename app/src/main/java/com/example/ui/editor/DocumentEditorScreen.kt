@@ -30,6 +30,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
 import androidx.compose.material.icons.automirrored.outlined.RotateRight
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed as lazyListItemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.outlined.AddAPhoto
 import androidx.compose.material.icons.outlined.BrandingWatermark
 import androidx.compose.material.icons.outlined.Crop
@@ -37,7 +41,11 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Draw
 import androidx.compose.material.icons.outlined.DriveFileRenameOutline
 import androidx.compose.material.icons.outlined.FileDownload
+import androidx.compose.material.icons.outlined.GridView
+import androidx.compose.material.icons.outlined.MenuBook
 import androidx.compose.material.icons.outlined.PhotoLibrary
+import androidx.compose.material.icons.outlined.Print
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AssistChip
@@ -67,7 +75,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -81,6 +92,7 @@ import com.example.ui.components.ExportBottomSheet
 import com.example.ui.components.FormatUtils
 import com.example.ui.components.SkeletonShimmerBox
 import com.example.ui.components.TextInputDialog
+import com.example.ui.components.WatermarkConfigDialog
 import com.example.ui.theme.BottomSheetShape
 import com.example.ui.theme.PillShape
 import kotlinx.coroutines.launch
@@ -108,11 +120,15 @@ fun DocumentEditorScreen(
     val exportState by viewModel.exportState.collectAsStateWithLifecycle()
     val isBusy by viewModel.isBusy.collectAsStateWithLifecycle()
 
+    val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
     var selectedPageIndex by remember { mutableStateOf(0) }
     var focusedPage by remember { mutableStateOf<PageEntity?>(null) }
+    var isReaderMode by remember { mutableStateOf(false) }
+    var readerSearchQuery by remember { mutableStateOf("") }
+    var showReaderSearch by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf(false) }
     var showWatermarkDialog by remember { mutableStateOf(false) }
     var showExportSheet by remember { mutableStateOf(false) }
@@ -148,6 +164,33 @@ fun DocumentEditorScreen(
                     }
                 },
                 actions = {
+                    IconButton(
+                        onClick = { isReaderMode = !isReaderMode },
+                        modifier = Modifier.testTag("editor_reader_toggle")
+                    ) {
+                        Icon(
+                            if (isReaderMode) Icons.Outlined.GridView else Icons.Outlined.MenuBook,
+                            contentDescription = if (isReaderMode) "Page grid view" else "PDF Reader view"
+                        )
+                    }
+                    if (isReaderMode) {
+                        IconButton(onClick = { showReaderSearch = !showReaderSearch }) {
+                            Icon(Icons.Outlined.Search, contentDescription = "Search inside document")
+                        }
+                    }
+                    IconButton(
+                        onClick = {
+                            FormatUtils.printDocumentPages(
+                                context = context,
+                                jobName = document?.name ?: "ScanNest Document",
+                                imagePaths = pages.map { it.processedImagePath }
+                            )
+                        },
+                        enabled = pages.isNotEmpty(),
+                        modifier = Modifier.testTag("editor_print_button")
+                    ) {
+                        Icon(Icons.Outlined.Print, contentDescription = "Print document")
+                    }
                     IconButton(onClick = { showRenameDialog = true }) {
                         Icon(Icons.Outlined.DriveFileRenameOutline, contentDescription = "Rename")
                     }
@@ -224,13 +267,107 @@ fun DocumentEditorScreen(
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
 
-            LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = 150.dp),
-                contentPadding = PaddingValues(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxSize()
-            ) {
+            if (isReaderMode) {
+                val listState = rememberLazyListState()
+                var zoomScale by remember { mutableStateOf(1f) }
+                val q = readerSearchQuery.trim()
+                val matchingPageIndices = remember(pages, q) {
+                    if (q.isBlank()) emptyList()
+                    else pages.mapIndexedNotNull { idx, p ->
+                        if (p.ocrText?.contains(q, ignoreCase = true) == true) idx else null
+                    }
+                }
+
+                if (showReaderSearch) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        androidx.compose.material3.OutlinedTextField(
+                            value = readerSearchQuery,
+                            onValueChange = { readerSearchQuery = it },
+                            placeholder = { Text("Find text in pages (OCR)…") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        if (q.isNotBlank()) {
+                            Text(
+                                text = "${matchingPageIndices.size} match(es)",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            matchingPageIndices.firstOrNull()?.let { firstIdx ->
+                                androidx.compose.material3.TextButton(
+                                    onClick = { scope.launch { listState.animateScrollToItem(firstIdx) } }
+                                ) { Text("Jump") }
+                            }
+                        }
+                    }
+                }
+
+                LazyColumn(
+                    state = listState,
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .pointerInput(Unit) {
+                            detectTransformGestures { _, _, zoom, _ ->
+                                zoomScale = (zoomScale * zoom).coerceIn(1f, 3f)
+                            }
+                        }
+                ) {
+                    lazyListItemsIndexed(pages, key = { _, p -> "reader_${p.id}" }) { index, page ->
+                        val isMatch = index in matchingPageIndices
+                        Card(
+                            shape = MaterialTheme.shapes.medium,
+                            border = if (isMatch) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    selectedPageIndex = index
+                                    focusedPage = page
+                                }
+                        ) {
+                            Box {
+                                SubcomposeAsyncImage(
+                                    model = File(page.processedImagePath),
+                                    contentDescription = "Reader page ${index + 1}",
+                                    contentScale = ContentScale.FillWidth,
+                                    loading = { SkeletonShimmerBox(Modifier.fillMaxWidth().height(360.dp)) },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .graphicsLayer(scaleX = zoomScale, scaleY = zoomScale)
+                                )
+                                Surface(
+                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.88f),
+                                    shape = RoundedCornerShape(bottomEnd = 10.dp),
+                                    modifier = Modifier.align(Alignment.TopStart)
+                                ) {
+                                    Text(
+                                        text = "Page ${index + 1} / ${pages.size}",
+                                        color = MaterialTheme.colorScheme.onPrimary,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(minSize = 150.dp),
+                    contentPadding = PaddingValues(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxSize()
+                ) {
                 itemsIndexed(pages, key = { _, p -> p.id }) { index, page ->
                     val isSelected = index == selectedPageIndex
                     Card(
@@ -316,6 +453,7 @@ fun DocumentEditorScreen(
             }
         }
     }
+    }
 
     // Page-level Detail & Tools Sheet
     focusedPage?.let { page ->
@@ -388,12 +526,11 @@ fun DocumentEditorScreen(
     }
 
     if (showWatermarkDialog) {
-        TextInputDialog(
-            title = "Add Diagonal Watermark",
-            label = "Watermark text (e.g. CONFIDENTIAL)",
-            initialValue = "CONFIDENTIAL",
-            confirmText = "Apply",
-            onConfirm = { viewModel.applyWatermark(documentId, it) },
+        WatermarkConfigDialog(
+            initialText = "CONFIDENTIAL",
+            onConfirm = { text, alpha, scale, colorInt ->
+                viewModel.applyWatermark(documentId, text, alpha, scale, colorInt)
+            },
             onDismiss = { showWatermarkDialog = false }
         )
     }

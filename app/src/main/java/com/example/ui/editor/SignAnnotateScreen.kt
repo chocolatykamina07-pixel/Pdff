@@ -40,6 +40,8 @@ import androidx.compose.material.icons.outlined.CheckBox
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Draw
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.FormatStrikethrough
+import androidx.compose.material.icons.outlined.FormatUnderlined
 import androidx.compose.material.icons.outlined.Highlight
 import androidx.compose.material.icons.outlined.RotateRight
 import androidx.compose.material.icons.outlined.TextFields
@@ -108,7 +110,7 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 
 private enum class AnnotationKind {
-    SIGNATURE, TEXT, DATE, CHECKMARK, HIGHLIGHT
+    SIGNATURE, TEXT, DATE, CHECKMARK, HIGHLIGHT, UNDERLINE, STRIKETHROUGH
 }
 
 private data class OverlayAnnotation(
@@ -360,6 +362,36 @@ fun SignAnnotateScreen(
                         leadingIcon = { Icon(Icons.Outlined.Highlight, contentDescription = null, modifier = Modifier.size(18.dp)) }
                     )
                     FilterChip(
+                        selected = false,
+                        onClick = {
+                            pushUndoSnapshot()
+                            val item = OverlayAnnotation(
+                                id = System.currentTimeMillis(),
+                                kind = AnnotationKind.UNDERLINE,
+                                colorInt = activeInkColor.toArgb()
+                            )
+                            overlays = overlays + item
+                            selectedOverlayId = item.id
+                        },
+                        label = { Text("Underline") },
+                        leadingIcon = { Icon(Icons.Outlined.FormatUnderlined, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                    )
+                    FilterChip(
+                        selected = false,
+                        onClick = {
+                            pushUndoSnapshot()
+                            val item = OverlayAnnotation(
+                                id = System.currentTimeMillis(),
+                                kind = AnnotationKind.STRIKETHROUGH,
+                                colorInt = activeInkColor.toArgb()
+                            )
+                            overlays = overlays + item
+                            selectedOverlayId = item.id
+                        },
+                        label = { Text("Strike") },
+                        leadingIcon = { Icon(Icons.Outlined.FormatStrikethrough, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                    )
+                    FilterChip(
                         selected = freehandMode,
                         onClick = { freehandMode = !freehandMode },
                         label = { Text("Pen") },
@@ -367,7 +399,13 @@ fun SignAnnotateScreen(
                     )
 
                     // Ink Color Dots
-                    listOf(Color(0xFF0F172A), Color(0xFF1D4ED8), Color(0xFFDC2626)).forEach { c ->
+                    listOf(
+                        Color(0xFF0F172A),
+                        Color(0xFF1D4ED8),
+                        Color(0xFFDC2626),
+                        Color(0xFF0F766E),
+                        Color(0xFFD97706)
+                    ).forEach { c ->
                         Box(
                             modifier = Modifier
                                 .size(28.dp)
@@ -511,6 +549,15 @@ fun SignAnnotateScreen(
                                         color = Color(0x66FACC15),
                                         topLeft = Offset(cx - baseSize * 0.8f, cy - baseSize * 0.18f),
                                         size = Size(baseSize * 1.6f, baseSize * 0.36f)
+                                    )
+                                }
+                                AnnotationKind.UNDERLINE, AnnotationKind.STRIKETHROUGH -> {
+                                    drawLine(
+                                        color = Color(ov.colorInt),
+                                        start = Offset(cx - baseSize * 0.85f, cy),
+                                        end = Offset(cx + baseSize * 0.85f, cy),
+                                        strokeWidth = 6f,
+                                        cap = StrokeCap.Round
                                     )
                                 }
                                 else -> {
@@ -870,6 +917,14 @@ private fun flattenAnnotationsOntoBitmap(
             AnnotationKind.HIGHLIGHT -> {
                 val p = Paint().apply { color = AndroidColor.argb(100, 250, 204, 21) }
                 canvas.drawRect(cx - baseSize * 0.8f, cy - baseSize * 0.18f, cx + baseSize * 0.8f, cy + baseSize * 0.18f, p)
+            }
+            AnnotationKind.UNDERLINE, AnnotationKind.STRIKETHROUGH -> {
+                val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = ov.colorInt
+                    strokeWidth = (baseSize * 0.045f).coerceAtLeast(6f)
+                    strokeCap = Paint.Cap.ROUND
+                }
+                canvas.drawLine(cx - baseSize * 0.85f, cy, cx + baseSize * 0.85f, cy, p)
             }
             else -> {
                 val tp = Paint(Paint.ANTI_ALIAS_FLAG).apply {

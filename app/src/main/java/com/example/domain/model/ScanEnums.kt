@@ -5,10 +5,18 @@ import kotlinx.serialization.Serializable
 enum class ScanMode(val label: String) {
     DOCUMENT("Document"),
     ID_CARD("ID Card"),
+    PASSPORT("Passport"),
     BOOK("Book"),
     WHITEBOARD("Whiteboard"),
     QR_BARCODE("QR/Barcode"),
     PHOTO("Photo")
+}
+
+enum class SearchCategory(val label: String) {
+    ALL("All"),
+    FOLDERS("Folders"),
+    DOCS("Docs"),
+    OCR_TEXT("OCR Text")
 }
 
 enum class FilterType(val label: String) {
@@ -140,6 +148,8 @@ data class ExportRequest(
 
 enum class ToolType(val title: String, val subtitle: String) {
     IMAGE_TO_PDF("Image to PDF", "Convert photos into a crisp PDF"),
+    WORD_TO_PDF("Word / Text to PDF", "Convert .docx or .txt files offline"),
+    PDF_READER("PDF Reader", "Open, search & read any PDF"),
     MERGE_PDF("Merge PDFs", "Combine multiple PDFs in order"),
     SPLIT_PDF("Split PDF", "Extract a range or single pages"),
     COMPRESS_PDF("Compress PDF", "Reduce file size offline"),

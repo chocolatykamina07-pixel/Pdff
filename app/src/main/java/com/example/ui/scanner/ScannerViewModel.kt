@@ -36,6 +36,7 @@ data class ScannerUiState(
     val detectedQuad: CropQuad? = null,
     val stabilityProgress: Float = 0f,
     val capturedFiles: List<File> = emptyList(),
+    val idCardBothSides: Boolean = true,
     val idFrontFile: File? = null,
     val idBackFile: File? = null,
     val qrResult: ScannedBarcodeResult? = null,
@@ -75,6 +76,10 @@ class ScannerViewModel(
                 qrResult = null
             )
         }
+    }
+
+    fun setIdCardBothSides(bothSides: Boolean) {
+        _uiState.update { it.copy(idCardBothSides = bothSides, idFrontFile = null, idBackFile = null) }
     }
 
     fun cycleFlash() {
@@ -135,12 +140,12 @@ class ScannerViewModel(
         onNavigateToEditor: (documentId: Long) -> Unit
     ) {
         val state = _uiState.value
-        if (state.scanMode == ScanMode.ID_CARD) {
+        if (state.scanMode == ScanMode.ID_CARD && state.idCardBothSides) {
             handleIdCardCapture(file, appendToDocumentId, onNavigateToEditor)
             return
         }
 
-        if (state.isBatchMode) {
+        if (state.isBatchMode && state.scanMode != ScanMode.ID_CARD) {
             _uiState.update { it.copy(capturedFiles = it.capturedFiles + file) }
         } else {
             finalizeCaptures(

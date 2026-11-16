@@ -182,10 +182,16 @@ class DocumentEditorViewModel(
         }
     }
 
-    fun applyWatermark(documentId: Long, text: String) {
+    fun applyWatermark(
+        documentId: Long,
+        text: String,
+        alpha: Int = 55,
+        scaleFactor: Float = 1f,
+        colorInt: Int = android.graphics.Color.rgb(15, 118, 110)
+    ) {
         viewModelScope.launch {
             _isBusy.value = true
-            repository.applyWatermarkToDocument(documentId, text)
+            repository.applyWatermarkToDocument(documentId, text, alpha, scaleFactor, colorInt)
             _isBusy.value = false
         }
     }
